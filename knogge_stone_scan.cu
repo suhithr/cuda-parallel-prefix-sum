@@ -1,6 +1,8 @@
 /* Knogge-Stone Prefix Sum Parallel Scan Implementation */
+#include "knogge_stone_scan.h"
 #include <iostream>
 #include <math.h>
+
 
 /* Scan Kernel
 Inclusive scan, limited to scan size < threads per block
@@ -11,7 +13,8 @@ __global__ void prefixScanKernel(const uint32_t *const in, uint32_t *const out, 
     uint32_t i = blockDim.x * blockIdx.x + threadIdx.x;
     uint32_t local_i = threadIdx.x;
 
-    extern __shared__ unsigned float sharedMem[] if (i < int(len))
+    extern __shared__ float sharedMem[];
+    if (i < int(len))
     {
         sharedMem[local_i] = in[i];
     }
@@ -21,10 +24,11 @@ __global__ void prefixScanKernel(const uint32_t *const in, uint32_t *const out, 
     }
     for (uint32_t stride = 1; stride < blockDim.x; stride *= 2)
     {
+        float temp;
         __syncthreads();
         if (i >= stride)
         {
-            float temp = sharedMem[local_i] + sharedMem[local_i - stride]
+            temp = sharedMem[local_i] + sharedMem[local_i - stride];
         }
         __syncthreads();
         if (i >= stride)
@@ -48,7 +52,7 @@ void prefixScan(const uint32_t* const in, uint32_t* out, const size_t len)
 
     cudaMemcpy(in_d, in, len, cudaMemcpyHostToDevice);
     prefixScanKernel<<<THREADS_PER_BLOCK, 1>>>(in_d, out_d, len);
-    cudaMemcpy(out, out_d, size, cudaMemcpyDevicetoHost);
+    cudaMemcpy(out, out_d, len, cudaMemcpyDeviceToHost);
 
     cudaFree(in_d);
     cudaFree(out_d);
