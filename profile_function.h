@@ -4,6 +4,7 @@
 
 #include <iostream>
 #include <chrono>
+#include <functional>
 #include <utility>
 
 template <typename Func, typename... Args>
