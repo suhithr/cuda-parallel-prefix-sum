@@ -62,10 +62,6 @@ int main()
 
     assert_array_equal(out, out_gpu, INPUT_LENGTH);
     std::cout << "Verified arrays are equal \n";
-    // for (int i = 0; i < INPUT_LENGTH; i++)
-    // {
-    //     std::cout << " " << out_gpu[i];
-    // }
 
     
 }
