@@ -8,7 +8,7 @@
 #include <utility>
 
 template <typename Func, typename... Args>
-void profileFunction(const std::string& name, Func&& func, Args&&... args)
+void profile_function(const std::string& name, Func&& func, Args&&... args)
 {
     auto start_time = std::chrono::high_resolution_clock::now();
 
