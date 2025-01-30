@@ -125,5 +125,4 @@ void knoggeAndCpu()
 int main()
 {
     blellochAndCpu();
-
 }

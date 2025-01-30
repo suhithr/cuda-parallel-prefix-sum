@@ -11,20 +11,20 @@ __device__ int ilog2_cuda(size_t n)
     return (n == 0) ? -1 : (8 * sizeof(n) - __clz(n) - 1);
 }
 
-__global__ void blellochScanKernel(const uint32_t *const in, uint32_t *out, const size_t len)
+__global__ void blellochScanKernel(const uint32_t *const in, uint32_t *const block_sums_d, uint32_t *out, const uint32_t len)
 {
     uint32_t global_tid = blockDim.x * blockIdx.x + threadIdx.x;
-    uint32_t local_i = threadIdx.x;
+    uint32_t local_tid = threadIdx.x;
     extern __shared__ uint32_t sharedMem[];
 
     // Copy to shared memory and zero it out if needed
     if (global_tid < int(len))
     {
-        sharedMem[local_i] = in[global_tid];
+        sharedMem[local_tid] = in[global_tid];
     }
     else
     {
-        sharedMem[local_i] = 0.0f;
+        sharedMem[local_tid] = 0;
     }
     __syncthreads();
     
@@ -34,15 +34,16 @@ __global__ void blellochScanKernel(const uint32_t *const in, uint32_t *out, cons
     int stride = 1;
     // int log2_len = ilog2_cuda(len);
     // d actually indicates how many threads run at each stage
-    for (int d = len >> 1; d > 0; d>>= 1)
+    int max_threads = (len < blockDim.x ? len: blockDim.x);
+    for (int d = max_threads >> 1; d > 0; d>>= 1)
     {
-        if (local_i < d)
+        if (local_tid < d)
         {
             /* thread mapping allows us to smartly map a series of consecutive threads to non consecutive
             elements.
-            These expressions will return elements as pairs in constructing the tree*/
-            int ai = stride * (2 * local_i + 1) - 1;
-            int bi = stride * (2 * local_i + 2) - 1;
+            These expressions will return elements as pairs in constructing the tree.*/
+            int ai = stride * (2 * local_tid + 1) - 1;
+            int bi = stride * (2 * local_tid + 2) - 1;
             sharedMem[bi] = sharedMem[ai] + sharedMem[bi]; 
         }
         stride <<= 1;
@@ -50,18 +51,20 @@ __global__ void blellochScanKernel(const uint32_t *const in, uint32_t *out, cons
     }
 
     // /* Down Sweep Portion*/
-    if (local_i == 0)
+    if (local_tid == max_threads-1)
     {
-        sharedMem[len-1] = 0;
+        printf("blockDim %d blockIdx %d", blockDim.x, blockIdx.x);
+        block_sums_d[blockIdx.x] = sharedMem[max_threads-1];
+        sharedMem[local_tid] = 0;
     }
     __syncthreads();
     // stride = len >> 1;
-    for (int d = 1; d < len; d <<= 1)
+    for (int d = 1; d < max_threads; d <<= 1)
     {
-        if (local_i < d)
+        if (local_tid < d)
         {
-            int ai = stride * (2 * local_i + 1) - 1;
-            int bi = stride * (2 * local_i + 2) - 1;
+            int ai = stride * (2 * local_tid + 1) - 1;
+            int bi = stride * (2 * local_tid + 2) - 1;
             // uncomment to visualize the threads getting mapped to indices
             // printf("Threadid %d ai %d :: bi %d\n ", threadIdx.x, ai, bi);
             int temp = sharedMem[bi];
@@ -74,21 +77,30 @@ __global__ void blellochScanKernel(const uint32_t *const in, uint32_t *out, cons
 
     if (global_tid < len)
     {
-        out[global_tid] = sharedMem[local_i];
+        out[global_tid] = sharedMem[local_tid];
     }
 }
 void blellochScan(const uint32_t* const in, uint32_t* out, const size_t len)
 {
     const uint32_t THREADS_PER_BLOCK = 1024;
 
-    uint32_t *in_d, *out_d; 
+    uint32_t *in_d, *out_d, *block_sum_d; 
     checkCudaErrors(cudaMalloc((void **) &in_d, len * sizeof(uint32_t)));
     checkCudaErrors(cudaMalloc((void **) &out_d, len * sizeof(uint32_t)));
-    // checkCudaErrors(cudaMalloc((void **) &block_sum_d, 1 * sizeof(uint32_t)));
 
     checkCudaErrors(cudaMemcpy(in_d, in, len * sizeof(uint32_t), cudaMemcpyHostToDevice));
-    blellochScanKernel<<<1, THREADS_PER_BLOCK, THREADS_PER_BLOCK * sizeof(uint32_t)>>>(in_d, out_d, len);
 
+    if (len <= THREADS_PER_BLOCK)
+    {
+        checkCudaErrors(cudaMalloc((void **) &block_sum_d, 2 * sizeof(uint32_t)));
+        blellochScanKernel<<<1, THREADS_PER_BLOCK, 2* THREADS_PER_BLOCK * sizeof(uint32_t)>>>(in_d, block_sum_d, out_d, len);
+    }
+    else
+    {
+        uint32_t NUM_BLOCKS = (len + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK;
+        checkCudaErrors(cudaMalloc((void **) &block_sum_d, NUM_BLOCKS * sizeof(uint32_t)));
+        blellochScanKernel<<<NUM_BLOCKS, THREADS_PER_BLOCK, THREADS_PER_BLOCK * sizeof(uint32_t)>>>(in_d, block_sum_d, out_d, len);
+    }
     checkCudaErrors(cudaMemcpy(out, out_d, len * sizeof(uint32_t), cudaMemcpyDeviceToHost));
 
     checkCudaErrors(cudaFree(in_d));
