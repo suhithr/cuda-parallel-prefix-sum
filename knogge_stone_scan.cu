@@ -1,4 +1,5 @@
 /* Knogge-Stone Prefix Sum Parallel Scan Implementation */
+#include "check_cuda.h"
 #include "knogge_stone_scan.h"
 #include <iostream>
 #include <math.h>
