@@ -38,8 +38,9 @@ void assert_array_equal(const uint32_t* arr1, const uint32_t* arr2, size_t len)
 }
 void blellochAndCpu()
 {
-    const size_t INPUT_LENGTH = 100;
+    const size_t INPUT_LENGTH = 2500;
     // Generate random input
+
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_int_distribution<int> dist(1, 5000);
