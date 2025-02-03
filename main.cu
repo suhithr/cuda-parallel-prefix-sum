@@ -38,7 +38,7 @@ void assert_array_equal(const uint32_t* arr1, const uint32_t* arr2, size_t len)
 }
 void blellochAndCpu()
 {
-    const size_t INPUT_LENGTH = 2500;
+    const size_t INPUT_LENGTH =500000000;
     // Generate random input
 
     std::random_device rd;
@@ -49,8 +49,8 @@ void blellochAndCpu()
     uint32_t* in = new uint32_t[INPUT_LENGTH];
     for (int i = 0; i < INPUT_LENGTH; ++i)
     {
-        // in[i] = dist(gen);
-        in[i] = i;
+        in[i] = dist(gen);
+        // in[i] = i;
     }
     // uint32_t* in = new uint32_t[8]{4, 6, 7, 1, 2, 8, 5, 2};
 
@@ -61,22 +61,22 @@ void blellochAndCpu()
     std::cout << "Performing CPU Scan" << std::endl;
 
     profile_function("cpu_exclusive_prefix_scan", cpu_exclusive_prefix_scan, in, out, INPUT_LENGTH);
-    for (int i = 0; i < INPUT_LENGTH; i++)
-    {
-        std::cout << " " << out[i];
-    }
-    std::cout << "\n";
+    // for (int i = 0; i < INPUT_LENGTH; i++)
+    // {
+    //     std::cout << " " << out[i];
+    // }
+    // std::cout << "\n";
 
     // Create host memory for output
     uint32_t* out_gpu  = new uint32_t[INPUT_LENGTH];
     // Do GPU scan
     std::cout << "Performing Blelloch Scan" << "\n";
     profile_function("blellochScan", blellochScan, in, out_gpu, INPUT_LENGTH);
-    for (int i = 0; i < INPUT_LENGTH; i++)
-    {
-        std::cout << " " << out_gpu[i];
-    }
-    std::cout << "\n" << std::endl;
+    // for (int i = 0; i < INPUT_LENGTH; i++)
+    // {
+    //     std::cout << " " << out_gpu[i];
+    // }
+    // std::cout << "\n" << std::endl;
 
     assert_array_equal(out, out_gpu, INPUT_LENGTH);
     std::cout << "Verified arrays are equal \n";

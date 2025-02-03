@@ -29,18 +29,19 @@ __global__ void blellochScanKernel(const uint32_t *const in, uint32_t *const blo
         We build a reduction tree of partial sums
     */
     int stride = 1;
-    // d actually indicates how many threads run at each stage
     int max_threads = blockDim.x; // (len < blockDim.x ? len: blockDim.x);
-    int ai = 0, bi = 0;
+
+    // Think of this as just building out a tree. Starting from max_threads/2 pairs all the way up
     for (int d = max_threads >> 1; d > 0; d>>= 1)
     {
+        // d actually indicates how many threads run at each stage
         if (local_tid < d)
         {
             /* thread mapping allows us to smartly map a series of consecutive threads to non consecutive
             elements.
             These expressions will return elements as pairs in constructing the tree.*/
-            ai = stride * (2 * local_tid + 1) - 1;
-            bi = stride * (2 * local_tid + 2) - 1;
+            int ai = stride * (2 * local_tid + 1) - 1;
+            int bi = stride * (2 * local_tid + 2) - 1;
             sharedMem[bi] = sharedMem[ai] + sharedMem[bi]; 
         }
         stride <<= 1;
@@ -50,7 +51,6 @@ __global__ void blellochScanKernel(const uint32_t *const in, uint32_t *const blo
     // /* Down Sweep Portion*/
     if (local_tid == 0 && max_threads > 0)
     {
-        printf("blockDim %d blockIdx %d shmem[%d] value %d \n", blockDim.x, blockIdx.x, (max_threads-1), sharedMem[max_threads-1]);
         block_sums_d[blockIdx.x] = sharedMem[max_threads - 1];
         sharedMem[max_threads-1] = 0;
     }
@@ -118,38 +118,28 @@ void blellochScan(const uint32_t* const in, uint32_t* out, const size_t len)
         
         cudaDeviceSynchronize();
 
-        cudaError_t err = cudaGetLastError();
-        if (err != cudaSuccess) {
-            printf("CUDA error: %s\n", cudaGetErrorString(err));
-        }
-
         /* Second Scan */
 
-        // this is just if all the block sums fit in one block
-        uint32_t *dummy_block_sums_d, *scanned_block_sums_d;
-        checkCudaErrors(cudaMalloc((void **) &dummy_block_sums_d, sizeof(uint32_t)));
-        checkCudaErrors(cudaMemset(dummy_block_sums_d, 0, sizeof(uint32_t)));
-        checkCudaErrors(cudaMalloc((void **) &scanned_block_sums_d, NUM_BLOCKS * sizeof(uint32_t)));
-        checkCudaErrors(cudaMemset(scanned_block_sums_d, 0, NUM_BLOCKS * sizeof(uint32_t)));
 
-        // std::cout << "Performing second blelloch scan \n";
-        blellochScanKernel<<<1, THREADS_PER_BLOCK, 2 * THREADS_PER_BLOCK * sizeof(uint32_t)>>>(block_sum_d, dummy_block_sums_d, scanned_block_sums_d, NUM_BLOCKS);
+        if (NUM_BLOCKS <= THREADS_PER_BLOCK) {
 
-        uint32_t* scanned_block_sums_h = new uint32_t[NUM_BLOCKS];
-        checkCudaErrors(cudaMemcpy(scanned_block_sums_h, scanned_block_sums_d, NUM_BLOCKS * sizeof(uint32_t), cudaMemcpyDeviceToHost));
+            // this is just if all the block sums fit in one block
+            uint32_t *dummy_block_sums_d;
+            checkCudaErrors(cudaMalloc((void **) &dummy_block_sums_d, sizeof(uint32_t)));
+            checkCudaErrors(cudaMemset(dummy_block_sums_d, 0, sizeof(uint32_t)));
+            std::cout << "Performing second blelloch scan \n";
+            blellochScanKernel<<<1, THREADS_PER_BLOCK, 2 * THREADS_PER_BLOCK * sizeof(uint32_t)>>>(block_sum_d, dummy_block_sums_d, block_sum_d, NUM_BLOCKS);
 
-        checkCudaErrors(cudaFree(dummy_block_sums_d));
+            checkCudaErrors(cudaFree(dummy_block_sums_d));
+        }
+        else
+        {
+            blellochScan(block_sum_d, block_sum_d, NUM_BLOCKS);
+        }
 
-        // std::cout << "scanned_block_sums_h \n";
-        // for (int i = 0; i < NUM_BLOCKS ; i++)
-        // {
-        //     std::cout << " " <<scanned_block_sums_h[i];
-        // }
-        // std::cout << "\n";
 
-        // distribute the scanned block sums
+        distributeBlockSums<<<NUM_BLOCKS, THREADS_PER_BLOCK>>>(block_sum_d, out_d, len); 
 
-        distributeBlockSums<<<NUM_BLOCKS, THREADS_PER_BLOCK>>>(scanned_block_sums_d, out_d, len); 
         uint32_t* block_sum_host = new uint32_t[NUM_BLOCKS];
         checkCudaErrors(cudaMemcpy(block_sum_host, block_sum_d, NUM_BLOCKS * sizeof(uint32_t), cudaMemcpyDeviceToHost));
         // for (int i = 0; i < NUM_BLOCKS ; i++)
@@ -159,7 +149,7 @@ void blellochScan(const uint32_t* const in, uint32_t* out, const size_t len)
         // std::cout << "\n";
     }
     checkCudaErrors(cudaMemcpy(out, out_d, len * sizeof(uint32_t), cudaMemcpyDeviceToHost));
-
     checkCudaErrors(cudaFree(in_d));
     checkCudaErrors(cudaFree(out_d));
+    checkCudaErrors(cudaFree(block_sum_d));
 }
