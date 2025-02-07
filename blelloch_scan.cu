@@ -29,10 +29,10 @@ __global__ void blellochScanKernel(const uint32_t *const in, uint32_t *const blo
         We build a reduction tree of partial sums
     */
     int stride = 1;
-    int max_threads = blockDim.x; // (len < blockDim.x ? len: blockDim.x);
+    int max_threads = blockDim.x; 
 
     // Think of this as just building out a tree. Starting from max_threads/2 pairs all the way up
-    for (int d = max_threads >> 1; d > 0; d>>= 1)
+    for (int d = max_threads >> 1; d > 0; d>>= 1, stride <<= 1)
     {
         // d actually indicates how many threads run at each stage
         if (local_tid < d)
@@ -41,10 +41,10 @@ __global__ void blellochScanKernel(const uint32_t *const in, uint32_t *const blo
             elements.
             These expressions will return elements as pairs in constructing the tree.*/
             int ai = stride * (2 * local_tid + 1) - 1;
-            int bi = stride * (2 * local_tid + 2) - 1;
+            int bi = ai + stride;
             sharedMem[bi] = sharedMem[ai] + sharedMem[bi]; 
         }
-        stride <<= 1;
+        // stride <<= 1;
         __syncthreads();
     }
 
@@ -57,20 +57,20 @@ __global__ void blellochScanKernel(const uint32_t *const in, uint32_t *const blo
     // printf("Here tid %d\n", threadIdx.x);
     __syncthreads();
     stride = max_threads >> 1;
-    for (int d = 1; d < max_threads; d <<= 1)
+    for (int d = 1; d <= max_threads >> 1; d <<= 1)
     {
         if (local_tid < d)
         {
-            int ai = stride * (2 * local_tid + 1) - 1;
-            int bi = stride * (2 * local_tid + 2) - 1;
+            int left = stride * (2 * local_tid + 1) - 1;
+            int right = left + stride;
             // uncomment to visualize the threads getting mapped to indices
             // printf("Threadid %d ai %d :: bi %d\n ", threadIdx.x, ai, bi);
-            if (bi < max_threads)
-            {
-                int temp = sharedMem[ai];
-                sharedMem[ai] = sharedMem[bi];
-                sharedMem[bi] = temp + sharedMem[bi];
-            }
+            // if (right < max_threads || true)
+            // {
+            int temp = sharedMem[left];
+            sharedMem[left] = sharedMem[right];
+            sharedMem[right] = temp + sharedMem[right];
+            // }
         }
         stride >>= 1;
         __syncthreads();
@@ -104,7 +104,7 @@ void blellochScan(const uint32_t* const in, uint32_t* out, const size_t len)
     {
         checkCudaErrors(cudaMalloc((void **) &block_sum_d, 2 * sizeof(uint32_t)));
         checkCudaErrors(cudaMemset(block_sum_d, 0, sizeof(uint32_t)));
-        blellochScanKernel<<<1, THREADS_PER_BLOCK, 2* THREADS_PER_BLOCK * sizeof(uint32_t)>>>(in_d, block_sum_d, out_d, len);
+        blellochScanKernel<<<1, THREADS_PER_BLOCK, THREADS_PER_BLOCK * sizeof(uint32_t)>>>(in_d, block_sum_d, out_d, len);
     }
     else
     {
@@ -113,9 +113,8 @@ void blellochScan(const uint32_t* const in, uint32_t* out, const size_t len)
         checkCudaErrors(cudaMalloc((void **) &block_sum_d, NUM_BLOCKS * sizeof(uint32_t)));
         checkCudaErrors(cudaMemset(block_sum_d, 0, NUM_BLOCKS * sizeof(uint32_t)));
         std::cout << "Performing first blelloch scan \n";
-        blellochScanKernel<<<NUM_BLOCKS, THREADS_PER_BLOCK, 2 * THREADS_PER_BLOCK * sizeof(uint32_t)>>>(in_d, block_sum_d, out_d, len);
+        blellochScanKernel<<<NUM_BLOCKS, THREADS_PER_BLOCK,  THREADS_PER_BLOCK * sizeof(uint32_t)>>>(in_d, block_sum_d, out_d, len);
 
-        
         cudaDeviceSynchronize();
 
         /* Second Scan */
@@ -128,7 +127,7 @@ void blellochScan(const uint32_t* const in, uint32_t* out, const size_t len)
             checkCudaErrors(cudaMalloc((void **) &dummy_block_sums_d, sizeof(uint32_t)));
             checkCudaErrors(cudaMemset(dummy_block_sums_d, 0, sizeof(uint32_t)));
             std::cout << "Performing second blelloch scan \n";
-            blellochScanKernel<<<1, THREADS_PER_BLOCK, 2 * THREADS_PER_BLOCK * sizeof(uint32_t)>>>(block_sum_d, dummy_block_sums_d, block_sum_d, NUM_BLOCKS);
+            blellochScanKernel<<<1, THREADS_PER_BLOCK, THREADS_PER_BLOCK * sizeof(uint32_t)>>>(block_sum_d, dummy_block_sums_d, block_sum_d, NUM_BLOCKS);
 
             checkCudaErrors(cudaFree(dummy_block_sums_d));
         }

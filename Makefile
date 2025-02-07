@@ -1,4 +1,4 @@
-NVCC_OPTS=--std=c++20 -Xcompiler -std=c++20
+NVCC_OPTS=
 
 all: scan
 
