@@ -4,6 +4,8 @@
 #include <cmath>
 #include <iostream>
 
+#define NUM_BANKS 32
+
 /* This version will have many shared memory bank conflicts leading
 to inefficiency*/
 
@@ -17,7 +19,7 @@ __global__ void blellochScanKernel(const uint32_t *const in,
 
   // Copy to shared memory and zero it out if needed
   if (active) {
-    sharedMem[local_tid] = in[global_tid];
+    sharedMem[local_tid + (local_tid / NUM_BANKS)] = in[global_tid];
   } else {
     sharedMem[local_tid] = 0;
   }
@@ -39,16 +41,18 @@ __global__ void blellochScanKernel(const uint32_t *const in,
       pairs in constructing the tree.*/
       int ai = stride * (2 * local_tid + 1) - 1;
       int bi = ai + stride;
+      bi += (bi / NUM_BANKS);
+      ai += (ai / NUM_BANKS);
       sharedMem[bi] = sharedMem[ai] + sharedMem[bi];
     }
-    // stride <<= 1;
     __syncthreads();
   }
 
   // /* Down Sweep Portion*/
   if (local_tid == 0 && max_threads > 0) {
-    block_sums_d[blockIdx.x] = sharedMem[max_threads - 1];
-    sharedMem[max_threads - 1] = 0;
+    block_sums_d[blockIdx.x] =
+        sharedMem[max_threads + (max_threads / NUM_BANKS) - 1];
+    sharedMem[max_threads + (max_threads / NUM_BANKS) - 1] = 0;
   }
   // printf("Here tid %d\n", threadIdx.x);
   __syncthreads();
@@ -57,6 +61,8 @@ __global__ void blellochScanKernel(const uint32_t *const in,
     if (local_tid < d) {
       int left = stride * (2 * local_tid + 1) - 1;
       int right = left + stride;
+      left += (left / NUM_BANKS);
+      right += (right / NUM_BANKS);
       // uncomment to visualize the threads getting mapped to indices
       // printf("Threadid %d ai %d :: bi %d\n ", threadIdx.x, ai, bi);
       // if (right < max_threads || true)
@@ -71,7 +77,7 @@ __global__ void blellochScanKernel(const uint32_t *const in,
   }
 
   if (active) {
-    out[global_tid] = sharedMem[local_tid];
+    out[global_tid] = sharedMem[local_tid + (local_tid / NUM_BANKS)];
   }
 }
 __global__ void distributeBlockSums(const uint32_t *const block_sums_d,
@@ -106,7 +112,7 @@ void blellochScan(const uint32_t *const in, uint32_t *out, const size_t len) {
     checkCudaErrors(cudaMemset(block_sum_d, 0, NUM_BLOCKS * sizeof(uint32_t)));
     std::cout << "Performing first blelloch scan \n";
     blellochScanKernel<<<NUM_BLOCKS, THREADS_PER_BLOCK,
-                         THREADS_PER_BLOCK * sizeof(uint32_t)>>>(
+                         2 * THREADS_PER_BLOCK * sizeof(uint32_t)>>>(
         in_d, block_sum_d, out_d, len);
 
     cudaDeviceSynchronize();
