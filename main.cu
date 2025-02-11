@@ -41,7 +41,10 @@ void blellochAndCpu() {
   std::uniform_int_distribution<int> dist(1, 5000);
 
   std::cout << "Generating input of length " << INPUT_LENGTH << "\n";
-  uint32_t *in = new uint32_t[INPUT_LENGTH];
+  // uint32_t *in = new uint32_t[INPUT_LENGTH];
+  uint32_t *in;
+  checkCudaErrors(cudaHostAlloc((void **)&in, INPUT_LENGTH * sizeof(uint32_t),
+                                cudaHostAllocDefault));
   for (int i = 0; i < INPUT_LENGTH; ++i) {
     in[i] = dist(gen);
     // in[i] = i;
@@ -66,8 +69,19 @@ void blellochAndCpu() {
   //   uint32_t *out_gpu = new uint32_t[INPUT_LENGTH];
 
   uint32_t *out_gpu;
-  checkCudaErrors(cudaHostAlloc(
-      (void **)&out_gpu, INPUT_LENGTH * sizeof(uint32_t), cudaHostAllocMapped));
+  // checkCudaErrors(cudaHostAlloc(
+  //     (void **)&out_gpu, INPUT_LENGTH * sizeof(uint32_t),
+  //     cudaHostAllocDefault));
+
+  /* Allocates bytes of host memory that is page-locked and accessible to the
+   device. The driver tracks the virtual memory ranges allocated with this
+   function and automatically accelerates calls to functions such as
+   cudaMemcpy(). Since the memory can be accessed directly by the device, it can
+   be read or written with much higher bandwidth than pageable memory obtained
+   with functions such as malloc().*/
+  checkCudaErrors(cudaHostAlloc((void **)&out_gpu,
+                                INPUT_LENGTH * sizeof(uint32_t),
+                                cudaHostAllocDefault));
   // Do GPU scan
   std::cout << "Performing Blelloch Scan" << "\n";
   profile_function("blellochScan", blellochScan, in, out_gpu, INPUT_LENGTH);
@@ -79,7 +93,8 @@ void blellochAndCpu() {
 
   assert_array_equal(out, out_gpu, INPUT_LENGTH);
   std::cout << "Verified arrays are equal \n";
-  checkCudaErrors(cudaFreeHost());
+  checkCudaErrors(cudaFreeHost(in));
+  checkCudaErrors(cudaFreeHost(out_gpu));
 }
 
 void knoggeAndCpu() {
