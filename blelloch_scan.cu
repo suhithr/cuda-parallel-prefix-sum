@@ -5,6 +5,7 @@
 #include <iostream>
 
 #define NUM_BANKS 32
+#define LOG_NUM_BANKS 5
 
 /* This version will have many shared memory bank conflicts leading
 to inefficiency*/
@@ -138,16 +139,6 @@ void blellochScan(const uint32_t *const in, uint32_t *out, const size_t len) {
 
     distributeBlockSums<<<NUM_BLOCKS, THREADS_PER_BLOCK>>>(block_sum_d, out_d,
                                                            len);
-
-    uint32_t *block_sum_host = new uint32_t[NUM_BLOCKS];
-    checkCudaErrors(cudaMemcpy(block_sum_host, block_sum_d,
-                               NUM_BLOCKS * sizeof(uint32_t),
-                               cudaMemcpyDeviceToHost));
-    // for (int i = 0; i < NUM_BLOCKS ; i++)
-    // {
-    //     std::cout << " " << block_sum_host[i];
-    // }
-    // std::cout << "\n";
   }
   checkCudaErrors(
       cudaMemcpy(out, out_d, len * sizeof(uint32_t), cudaMemcpyDeviceToHost));

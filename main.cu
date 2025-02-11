@@ -4,6 +4,7 @@
 #include <sstream>
 
 #include "blelloch_scan.h"
+#include "check_cuda.h"
 #include "knogge_stone_scan.h"
 #include "profile_function.h"
 
@@ -62,7 +63,11 @@ void blellochAndCpu() {
   // std::cout << "\n";
 
   // Create host memory for output
-  uint32_t *out_gpu = new uint32_t[INPUT_LENGTH];
+  //   uint32_t *out_gpu = new uint32_t[INPUT_LENGTH];
+
+  uint32_t *out_gpu;
+  checkCudaErrors(cudaHostAlloc(
+      (void **)&out_gpu, INPUT_LENGTH * sizeof(uint32_t), cudaHostAllocMapped));
   // Do GPU scan
   std::cout << "Performing Blelloch Scan" << "\n";
   profile_function("blellochScan", blellochScan, in, out_gpu, INPUT_LENGTH);
@@ -74,6 +79,7 @@ void blellochAndCpu() {
 
   assert_array_equal(out, out_gpu, INPUT_LENGTH);
   std::cout << "Verified arrays are equal \n";
+  checkCudaErrors(cudaFreeHost());
 }
 
 void knoggeAndCpu() {
